@@ -66,11 +66,11 @@ button:active:not(:disabled){transform:translateY(3px);box-shadow:0 1px 0 #0005}
       <div class="row">
         <label>Teams <select id="sTeams"><option value="0">Auto</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
         <label>Round <select id="sDur"><option value="2">2 min</option><option value="3" selected>3 min</option><option value="5">5 min</option></select></label>
-        <label>Test bots <select id="sBots"><option>0</option><option>2</option><option>4</option><option>6</option><option>9</option></select></label>
+        <label>Players per team <select id="sPer"><option value="0">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
       </div>
       <div class="row"><button id="start" class="alt">START GAME</button><button id="stop" class="ghost hidden">END ROUND NOW</button><button id="lobby" class="ghost hidden">BACK TO LOBBY</button></div>
     </div>
-    <div id="help">Move: WASD or arrow keys · Phone/tablet: touch and drag toward where you want to go<br>Auto teams: about 6 elves per team (2 to 6 teams).</div>
+    <div id="help">Move: WASD or arrow keys · Phone/tablet: touch and drag toward where you want to go<br>Host: pick Teams × Players per team (for example 2 × 2 = 4 elves). Empty spots are filled with computer elves. Auto splits whoever joined into teams of about 6.</div>
   </div>
 </div>
 <script>
@@ -218,14 +218,23 @@ function collectPlayers(){
  return out}
 function spawnPos(team){const[a,b,w,h]=slotRect(team);return{x:(a+1+Math.floor(Math.random()*(w-2)))*T+5,y:(b+1+Math.floor(Math.random()*(h-2)))*T+5}}
 function hostStart(){
- const list=collectPlayers().slice(0,36),bots=+$('sBots').value;
- for(let b=0;b<bots&&list.length<36;b++)list.push({peer:'bot'+b,name:'Elfbot '+(b+1),bot:true});
- if(!list.length){setStatus('Nobody has joined yet. Press JOIN or add test bots.');return}
- for(let i=list.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[list[i],list[j]]=[list[j],list[i]]}
- const k=+$('sTeams').value||Math.max(2,Math.min(6,Math.ceil(list.length/6)));
+ const humans=collectPlayers().slice(0,40);
+ if(!humans.length){setStatus('Nobody has joined yet. Press JOIN first.');return}
+ for(let i=humans.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[humans[i],humans[j]]=[humans[j],humans[i]]}
+ const h=humans.length,selT=+$('sTeams').value,selP=+$('sPer').value,cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+ let k,per;
+ if(selT&&selP){k=selT;per=selP}
+ else if(selT){k=selT;per=Math.ceil(h/k)}
+ else if(selP){per=selP;k=cl(Math.ceil(h/per),2,6)}
+ else{k=cl(Math.ceil(h/6),2,6);per=Math.ceil(h/k)}
+ per=Math.max(per,Math.ceil(h/k),1);if(k*per>40)per=Math.floor(40/k);
+ const teams=Array.from({length:k},()=>[]);humans.forEach((p,i)=>teams[i%k].push(p));
+ let nb=0;for(const tm of teams)while(tm.length<per)tm.push({peer:'bot'+nb,name:'Elfbot '+(++nb),bot:true});
+ const list=[],teamOf=[];teams.forEach((tm,t)=>tm.forEach(p=>{list.push(p);teamOf.push(t)}));
+ const sizeNote=selP&&per>selP?` (${per} per team so everyone fits)`:'';
  K=k;
- H={k,rd:1+(Math.random()*1e9|0),dur:+$('sDur').value*60,time:+$('sDur').value*60,phase:'play',elves:[],gifts:[],scores:Array(k).fill(0),ev:[],spawnT:0,sendT:0,roT:0};
- list.forEach((p,i)=>{const team=i%k,sp=spawnPos(team);H.elves.push({i,peer:p.peer,name:p.name,team,bot:!!p.bot,x:sp.x,y:sp.y,pile:0,imm:0,kx:0,ky:0,del:0,mov:0,path:[],think:Math.random()*.5,stuck:0,goal:null,kn:0,knx:0,kny:0,skin:hash(p.name)%4})});
+ H={k,rd:1+(Math.random()*1e9|0),dur:+$('sDur').value*60,time:+$('sDur').value*60,phase:'play',elves:[],gifts:[],scores:Array(k).fill(0),ev:[],spawnT:0,sendT:0,roT:0,note:`${k} teams × ${per} ${per>1?"elves":"elf"}${sizeNote}${nb?`, ${nb} bot${nb>1?'s':''} filling empty spots`:''}`};
+ list.forEach((p,i)=>{const team=teamOf[i],sp=spawnPos(team);H.elves.push({i,peer:p.peer,name:p.name,team,bot:!!p.bot,x:sp.x,y:sp.y,pile:0,imm:0,kx:0,ky:0,del:0,mov:0,path:[],think:Math.random()*.5,stuck:0,goal:null,kn:0,knx:0,kny:0,skin:hash(p.name)%4})});
  const target=giftTarget();for(let i=0;i<target;i++)spawnGift();
  hosting=true;foreignHost=null;
  applyRoster(makeRoster());applySnap(makeSnap());
@@ -410,9 +419,9 @@ function refreshPanel(){
  $('start').disabled=!!otherHost;$('start').textContent=hosting&&H&&H.phase==='end'?'PLAY AGAIN':'START GAME';
  $('stop').classList.toggle('hidden',!(hosting&&H&&H.phase==='play'));$('lobby').classList.toggle('hidden',!(hosting&&H&&H.phase==='end'));
  $('start').classList.toggle('hidden',!!(hosting&&H&&H.phase==='play'));
- if(!online){$('joinRow').classList.toggle('hidden',false);setStatus('Offline copy: play solo against test bots. Open the game link to play online with your team.');if($('sBots').value==='0')$('sBots').value='9';return}
+ if(!online){$('joinRow').classList.toggle('hidden',false);setStatus('Offline copy: play solo against test bots. Open the game link to play online with your team.');if($('sPer').value==='0')$('sPer').value='3';return}
  if(!connected)setStatus('Connecting…');
- else if(phase==='play')setStatus(myI>=0?'You’re in the round. Go go go!':'A round is in progress. You’ll be in the next one'+(joined?'.':' if you JOIN.'));
+ else if(phase==='play')setStatus((hosting&&H&&H.note?H.note+'. ':'')+(myI>=0?'You’re in the round. Go go go!':'A round is in progress. You’ll be in the next one'+(joined?'.':' if you JOIN.')));
  else if(otherHost&&phase==='end')setStatus('Round over! Waiting for the host to start the next one…');
  else if(!joined)setStatus('Type your elf name and press JOIN.');
  else setStatus(hostMode?'You’re in! When everyone has joined, press START GAME.':'You’re in! Waiting for the host to start the game…');
